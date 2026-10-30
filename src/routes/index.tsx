@@ -1,15 +1,17 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useServerFn } from "@tanstack/react-start";
+import { getResinMetrics } from "@/lib/resin-metrics.functions";
 import hero from "@/assets/hero.jpg";
 import raw from "@/assets/raw.jpg";
 import paint from "@/assets/paint.jpg";
-import { calcPrice, defaultInput, type PaintLevel, type PricingInput } from "@/lib/pricing";
+import type { PaintLevel } from "@/lib/pricing";
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Figures 3D sob encomenda + calculadora de preço" },
-      { name: "description", content: "Figures de personagens impressas em resina 3D, com calculadora de custo e preço final." },
+      { title: "Figures 3D sob encomenda com preço na hora" },
+      { name: "description", content: "Figures de personagens impressas em resina 3D, com estimativa de preço pela altura." },
       { property: "og:title", content: "Figures 3D sob encomenda" },
       { property: "og:description", content: "Impressão 3D em resina com pintura simples ou detalhada e estimativa de preço." },
     ],
@@ -19,107 +21,66 @@ export const Route = createFileRoute("/")({
 
 const brl = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
-function Field({ label, hint, value, onChange, step = 1, suffix }: { label: string; hint?: string; value: number; onChange: (v: number) => void; step?: number; suffix?: string }) {
-  return (
-    <label className="block">
-      <span className="text-sm font-semibold">{label}</span>
-      {hint && <span className="block text-xs text-muted-foreground">{hint}</span>}
-      <div className="mt-1 flex items-center rounded-md border border-input bg-background focus-within:ring-2 focus-within:ring-ring">
-        <input type="number" min={0} step={step} value={value} onChange={(e) => onChange(Number(e.target.value) || 0)} className="w-full bg-transparent px-3 py-2 outline-none" />
-        {suffix && <span className="pr-3 text-sm text-muted-foreground">{suffix}</span>}
-      </div>
-    </label>
-  );
-}
+function Quote() {
+  const fn = useServerFn(getResinMetrics);
+  const [height, setHeight] = useState(20);
+  const [pnt, setPnt] = useState<PaintLevel>("simple");
+  const [price, setPrice] = useState<number | null>(null);
+  const [loading, setLoading] = useState(false);
 
-function Calculator() {
-  const [i, setI] = useState<PricingInput>(defaultInput);
-  const set = <K extends keyof PricingInput>(k: K) => (v: PricingInput[K]) => setI((p) => ({ ...p, [k]: v }));
-  const r = calcPrice(i);
-  const rows = [
-    ["Resina", r.resin],
-    ["Suportes / perdas", r.supports],
-    ["Energia elétrica", r.energy],
-    ["Álcool isopropílico", r.ipa],
-    ["Mão de obra", r.labor],
-    ["Pintura", r.paint],
-  ] as const;
+  useEffect(() => {
+    const t = setTimeout(async () => {
+      setLoading(true);
+      try {
+        const r = await fn({ data: { heightCm: height, paint: pnt } });
+        setPrice(r.price);
+      } finally {
+        setLoading(false);
+      }
+    }, 250);
+    return () => clearTimeout(t);
+  }, [height, pnt, fn]);
+
   const paints: { k: PaintLevel; t: string }[] = [
     { k: "none", t: "Sem pintura" },
-    { k: "simple", t: "Simples" },
-    { k: "detailed", t: "Detalhada" },
+    { k: "simple", t: "Pintura simples" },
+    { k: "detailed", t: "Pintura detalhada" },
   ];
 
   return (
     <div className="grid gap-8 lg:grid-cols-[1fr_380px]">
       <div className="space-y-8 rounded-xl border border-border bg-card p-6 md:p-8">
         <section>
-          <h3 className="mb-4 text-2xl text-primary">1. Resina</h3>
-          <div className="grid gap-4 sm:grid-cols-3">
-            <Field label="Preço da resina" value={i.resinPricePerLiter} onChange={set("resinPricePerLiter")} suffix="R$/L" />
-            <Field label="Resina usada" value={i.resinMl} onChange={set("resinMl")} suffix="ml" />
-            <Field label="Suportes e perdas" value={i.supportWastePct} onChange={set("supportWastePct")} suffix="%" />
-          </div>
+          <h3 className="mb-2 text-2xl text-primary">Altura da figure</h3>
+          <p className="font-display text-6xl">{height} cm</p>
+          <input type="range" min={5} max={60} step={1} value={height} onChange={(e) => setHeight(Number(e.target.value))} className="mt-4 w-full accent-primary" />
+          <div className="flex justify-between text-xs text-muted-foreground"><span>5 cm</span><span>60 cm</span></div>
         </section>
         <section>
-          <h3 className="mb-4 text-2xl text-primary">2. Gastos adicionais</h3>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <Field label="Tempo de impressão" value={i.printHours} onChange={set("printHours")} step={0.5} suffix="h" />
-            <Field label="Potência da máquina" value={i.printerKw} onChange={set("printerKw")} step={0.01} suffix="kW" />
-            <Field label="Preço da luz" value={i.kwhPrice} onChange={set("kwhPrice")} step={0.05} suffix="R$/kWh" />
-            <Field label="Álcool isopropílico" hint="por peça" value={i.ipaCost} onChange={set("ipaCost")} step={0.5} suffix="R$" />
-          </div>
-        </section>
-        <section>
-          <h3 className="mb-4 text-2xl text-primary">3. Mão de obra</h3>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Horas de trabalho" hint="lavar, curar, tirar suportes, lixar" value={i.laborHours} onChange={set("laborHours")} step={0.5} suffix="h" />
-            <Field label="Valor da sua hora" value={i.laborRate} onChange={set("laborRate")} suffix="R$/h" />
-          </div>
-        </section>
-        <section>
-          <h3 className="mb-4 text-2xl text-primary">4. Pintura</h3>
-          <div className="mb-4 grid grid-cols-3 gap-2">
+          <h3 className="mb-4 text-2xl text-primary">Acabamento</h3>
+          <div className="grid grid-cols-3 gap-2">
             {paints.map((p) => (
-              <button key={p.k} onClick={() => set("paint")(p.k)} className={`rounded-md border px-3 py-3 text-sm font-semibold transition ${i.paint === p.k ? "border-primary bg-primary text-primary-foreground" : "border-border hover:border-primary"}`}>
+              <button key={p.k} onClick={() => setPnt(p.k)} className={`rounded-md border px-3 py-3 text-sm font-semibold transition ${pnt === p.k ? "border-primary bg-primary text-primary-foreground" : "border-border hover:border-primary"}`}>
                 {p.t}
               </button>
             ))}
           </div>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Pintura simples" hint="cores base, sem sombreamento" value={i.paintSimple} onChange={set("paintSimple")} suffix="R$" />
-            <Field label="Pintura detalhada" hint="sombras, luz, efeitos, verniz" value={i.paintDetailed} onChange={set("paintDetailed")} suffix="R$" />
-          </div>
-        </section>
-        <section>
-          <h3 className="mb-4 text-2xl text-primary">5. Seu lucro</h3>
-          <input type="range" min={0} max={300} step={5} value={i.profitPct} onChange={(e) => set("profitPct")(Number(e.target.value))} className="w-full accent-primary" />
-          <p className="mt-2 text-sm text-muted-foreground">Margem de lucro: <b className="text-foreground">{i.profitPct}%</b> sobre o custo</p>
         </section>
       </div>
-
-      <aside className="h-fit rounded-xl border border-primary/40 bg-card p-6 shadow-glow lg:sticky lg:top-6">
-        <h3 className="text-3xl">Estimativa</h3>
-        <ul className="mt-4 space-y-2 text-sm">
-          {rows.map(([l, v]) => (
-            <li key={l} className="flex justify-between"><span className="text-muted-foreground">{l}</span><span>{brl(v)}</span></li>
-          ))}
-        </ul>
-        <div className="my-4 border-t border-border" />
-        <div className="flex justify-between font-semibold"><span>Custo total</span><span>{brl(r.cost)}</span></div>
-        <div className="mt-1 flex justify-between text-primary"><span>Lucro ({i.profitPct}%)</span><span>+ {brl(r.profit)}</span></div>
-        <div className="mt-6 rounded-lg bg-fire p-5 text-primary-foreground">
-          <p className="text-xs font-bold uppercase tracking-widest">Preço sugerido</p>
-          <p className="font-display text-5xl">{brl(r.price)}</p>
+      <aside className="h-fit rounded-xl border border-primary/40 bg-card p-6 shadow-glow lg:sticky lg:top-24">
+        <div className="rounded-lg bg-fire p-5 text-primary-foreground">
+          <p className="text-xs font-bold uppercase tracking-widest">Preço médio estimado</p>
+          <p className={`font-display text-5xl transition-opacity ${loading ? "opacity-60" : ""}`}>{price === null ? "—" : brl(price)}</p>
         </div>
-        <button onClick={() => setI(defaultInput)} className="mt-4 w-full text-sm text-muted-foreground underline hover:text-foreground">Restaurar valores padrão</button>
+        <p className="mt-4 text-sm text-muted-foreground">Valor aproximado. O preço final é confirmado no orçamento, conforme o personagem.</p>
+        <a href="#contato" className="mt-4 block rounded-md border border-border px-4 py-3 text-center font-bold hover:border-primary">Pedir orçamento</a>
       </aside>
     </div>
   );
 }
 
 function Index() {
-  const nav = [["#inicio", "Início"], ["#galeria", "Galeria"], ["#calculadora", "Calculadora"], ["#contato", "Contato"]];
+  const nav = [["#inicio", "Início"], ["#galeria", "Galeria"], ["#calculadora", "Preço"], ["#contato", "Contato"]];
   return (
     <div id="inicio">
       <header className="sticky top-0 z-20 border-b border-border bg-background/80 backdrop-blur">
@@ -163,9 +124,9 @@ function Index() {
       </section>
 
       <section id="calculadora" className="mx-auto max-w-6xl px-5 py-20">
-        <h2 className="text-5xl">Calculadora de <span className="text-fire">preço</span></h2>
-        <p className="mb-10 mt-2 max-w-2xl text-muted-foreground">Coloque os seus custos reais. O preço final soma resina, gastos extras, mão de obra e pintura — e aplica sua margem de lucro por cima.</p>
-        <Calculator />
+        <h2 className="text-5xl">Quanto custa a <span className="text-fire">sua figure?</span></h2>
+        <p className="mb-10 mt-2 max-w-2xl text-muted-foreground">Escolha a altura e o acabamento e veja na hora o preço médio da sua figure.</p>
+        <Quote />
       </section>
 
       <section id="contato" className="border-t border-border py-20 text-center">
