@@ -1,5 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";\nimport { useServerFn } from "@tanstack/react-start";\nimport { getResinMetrics } from "@/lib/resin-metrics.functions";
+import { useEffect, useState } from "react";
+import { useServerFn } from "@tanstack/react-start";
+import { getResinMetrics } from "@/lib/resin-metrics.functions";
 import hero from "@/assets/hero.jpg";
 import raw from "@/assets/raw.jpg";
 import paint from "@/assets/paint.jpg";
